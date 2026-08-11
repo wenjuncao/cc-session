@@ -1,0 +1,15 @@
+# Python 字节码缓存
+__pycache__/
+*.pyc
+
+# PyInstaller 构建产物（根目录）
+/build/
+/dist/
+*.spec
+
+# 打包生成的可执行文件（根目录）
+/*.exe
+
+# 本地运行配置（含登录密码哈希与个人偏好，不应入库）
+/config/config.json
+/config.json
