@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-APP_VERSION = "1.3"   # 当前程序版本号（打包时自动 +1，如 1.2 -> 1.3）
+APP_VERSION = "0.0.1"   # 当前程序版本号（打包时自动 +1，如 0.0.1 -> 0.0.2）
 
 PROJECTS_DIR = os.path.join(os.path.expanduser("~"), ".claude", "projects")
 HEAD_LINES = 300        # 扫描时读取的头部行数（用于取标题/cwd/创建时间，保证启动快）
