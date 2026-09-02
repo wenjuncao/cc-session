@@ -13,3 +13,13 @@ __pycache__/
 # 本地运行配置（含登录密码哈希与个人偏好，不应入库）
 /config/config.json
 /config.json
+
+# 被控端本地状态（密码哈希、自签证书、node.json、日志、users.json，均不入库）
+/config/agent/
+
+# 打包目录 deploy/：保留源文件(spec/iss/bat/branding/lang/_read_version.py)，忽略构建输出
+/deploy/cc-session/
+/deploy/release/
+/deploy/_build.log
+# 上面 *.spec 会误伤 deploy 下手写的 spec，单独放行
+!/deploy/cc-session.spec

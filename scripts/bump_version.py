@@ -34,6 +34,19 @@ def main():
     with open(SRC, "w", encoding="utf-8", newline="") as f:
         f.write(text)
 
+    # 同步被控端版本号 agent/version.py 的 AGENT_VERSION，保证广播/服务描述与主程序一致
+    ver_py = os.path.normpath(os.path.join(HERE, "..", "src", "agent", "version.py"))
+    try:
+        with open(ver_py, encoding="utf-8", newline="") as f:
+            vt = f.read()
+        vm = re.search(r'^(AGENT_VERSION\s*=\s*")([^"]+)(")', vt, re.M)
+        if vm:
+            vt = vt[:vm.start(2)] + new + vt[vm.end(2):]
+            with open(ver_py, "w", encoding="utf-8", newline="") as f:
+                f.write(vt)
+    except FileNotFoundError:
+        pass
+
     print(new)   # 仅输出新版本号，供 for /f 捕获
 
 

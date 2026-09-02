@@ -16,15 +16,14 @@ import json
 import queue
 import shutil
 import sys
-import hashlib
 import subprocess
 import threading
 from datetime import datetime, timezone
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, font as tkfont
 
-APP_VERSION = "0.0.1"   # 当前程序版本号（打包时自动 +1，如 0.0.1 -> 0.0.2）
+APP_VERSION = "0.0.14"   # 当前程序版本号（打包时自动 +1，如 0.0.1 -> 0.0.2）
 
 PROJECTS_DIR = os.path.join(os.path.expanduser("~"), ".claude", "projects")
 HEAD_LINES = 300        # 扫描时读取的头部行数（用于取标题/cwd/创建时间，保证启动快）
@@ -34,8 +33,13 @@ DEFAULT_PAGE_SIZE = 40
 DEFAULT_WIDTH = 1650
 DEFAULT_HEIGHT = 930
 
-# 首次启动自动初始化的默认登录密码
-DEFAULT_PASSWORD = "Bsd@2026!"
+# 终端类型：值 -> 显示名（选 wt 但未安装 Windows 终端时自动回退 cmd）
+TERMINAL_CHOICES = [
+    ("wt", "Windows 终端"),
+    ("powershell", "PowerShell"),
+    ("cmd", "命令提示符 (cmd)"),
+]
+DEFAULT_TERMINAL = "wt"
 
 # 日报 / 周报 固定输出目录
 DAILY_DIR = r"D:\nas\工作文档\软件研发部\AA绩效管理\2026\日报"
@@ -74,8 +78,30 @@ def set_app_icon(win):
             pass
 
 
+def fit_combo_popdown(combo):
+    """按最宽候选加宽下拉窗口：Tk 只按控件宽度弹出，长路径会被截断看不全。
+    宽度用字体实测像素而非字符数——中文字符约为半角的两倍宽，按字数算会偏窄。"""
+    values = combo["values"]
+    if not values:
+        return
+    pop = combo.tk.call("ttk::combobox::PopdownWindow", combo)
+    listbox = f"{pop}.f.l"
+    fnt = tkfont.Font(font=combo.tk.call(listbox, "cget", "-font"))
+    text_px = max(fnt.measure(v) for v in values)
+
+    def widen():
+        parts = combo.tk.call("wm", "geometry", pop).split("+")   # "宽x高+X+Y"
+        w, h = parts[0].split("x")
+        w = max(int(w), min(text_px + 28,                          # 28: 边框 + 竖滚动条
+                            combo.winfo_screenwidth() - 40))       # 不超出屏幕
+        x = min(int(parts[1]), combo.winfo_screenwidth() - w - 4)
+        combo.tk.call("wm", "geometry", pop, f"{w}x{h}+{x}+{parts[2]}")
+
+    combo.after(0, widen)   # 必须等 Tk 弹出后再改，否则宽度会被它覆盖
+
+
 def read_config(path=CONFIG_PATH):
-    """读取整个 config.json（auth + settings 合一）。"""
+    """读取整个 config.json（settings 等分区）。"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -328,13 +354,22 @@ def human_duration(td):
 # ============================================================
 # 终端唤起：在指定目录打开终端并执行 claude 命令
 # ============================================================
-def launch_terminal(cwd, claude_cmd):
-    """在 cwd 打开终端(优先 Windows Terminal, 回退 cmd)并执行 claude_cmd。"""
+def launch_terminal(cwd, claude_cmd, terminal=None):
+    """在 cwd 打开终端并执行 claude_cmd。terminal: wt / powershell / cmd。"""
     if not cwd or not os.path.isdir(cwd):
         cwd = os.path.expanduser("~")
-    wt = shutil.which("wt") or shutil.which("wt.exe")
-    if wt:
-        subprocess.Popen([wt, "-d", cwd, "cmd", "/k", claude_cmd])
+    terminal = terminal or DEFAULT_TERMINAL
+    if terminal == "wt":
+        wt = shutil.which("wt") or shutil.which("wt.exe")
+        if wt:
+            subprocess.Popen([wt, "-d", cwd, "cmd", "/k", claude_cmd])
+            return
+        terminal = "cmd"          # 未安装 Windows 终端，回退 cmd
+    if terminal == "powershell":
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", "powershell", "-NoExit", "-Command",
+             f'Set-Location -LiteralPath "{cwd}"; {claude_cmd}']
+        )
     else:
         subprocess.Popen(
             ["cmd", "/c", "start", "", "cmd", "/k",
@@ -342,7 +377,7 @@ def launch_terminal(cwd, claude_cmd):
         )
 
 
-def resume_session(session):
+def resume_session(session, terminal=None):
     sid = session["session_id"]
     cwd = session["cwd"]
     if not cwd or not os.path.isdir(cwd):
@@ -350,13 +385,13 @@ def resume_session(session):
     if not os.path.isdir(cwd):
         cwd = os.path.expanduser("~")
     try:
-        launch_terminal(cwd, f"claude --resume {sid} --dangerously-skip-permissions")
+        launch_terminal(cwd, f"claude --resume {sid} --dangerously-skip-permissions", terminal)
         return True, cwd
     except Exception as e:
         return False, str(e)
 
 
-def generate_report(kind):
+def generate_report(kind, terminal=None):
     """调用 daily-report / weekly-report 技能生成报告。kind: 'daily' | 'weekly'。"""
     if kind == "daily":
         out_dir, prompt = DAILY_DIR, "生成今日日报"
@@ -369,157 +404,10 @@ def generate_report(kind):
     # daily-report 写到 cwd -> 在日报目录启动；weekly-report 写到固定路径 -> cwd 用周报目录亦可
     cwd = out_dir if os.path.isdir(out_dir) else os.path.expanduser("~")
     try:
-        launch_terminal(cwd, f'claude --dangerously-skip-permissions "{prompt}"')
+        launch_terminal(cwd, f'claude --dangerously-skip-permissions "{prompt}"', terminal)
         return True, out_dir
     except Exception as e:
         return False, str(e)
-
-
-# ============================================================
-# 登录 / 密码管理
-# ============================================================
-class AuthManager:
-    """本地密码认证：PBKDF2-HMAC-SHA256 加盐哈希，保存在 config.json。"""
-
-    ITERATIONS = 120_000
-
-    def __init__(self, path=CONFIG_PATH):
-        self.path = path
-        self._data = read_config(path).get("auth", {})
-
-    def _save(self):
-        write_section(self.path, "auth", self._data)
-
-    def exists(self):
-        return bool(self._data.get("hash") and self._data.get("salt"))
-
-    @staticmethod
-    def _hash(password, salt_bytes):
-        return hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), salt_bytes, AuthManager.ITERATIONS
-        ).hex()
-
-    def verify(self, password):
-        if not self.exists():
-            return False
-        salt = bytes.fromhex(self._data["salt"])
-        return self._hash(password, salt) == self._data["hash"]
-
-    def set_password(self, password):
-        salt = os.urandom(16)
-        self._data = {"salt": salt.hex(), "hash": self._hash(password, salt)}
-        self._save()
-
-
-class PasswordDialog(tk.Toplevel):
-    """通用密码弹窗。mode='login' 登录；mode='set' 设置/修改密码。"""
-
-    def __init__(self, parent, auth, mode="login", first=False):
-        super().__init__(parent)
-        self.auth = auth
-        self.mode = mode
-        self.first = first
-        self.result = False
-
-        self.title("登录" if mode == "login" else ("首次使用 · 设置密码" if first else "修改密码"))
-        self.resizable(False, False)
-        # 仅当父窗口可见时才设为 transient；否则(登录前 root 处于 withdraw)
-        # transient 会被随 master 一起隐藏，导致对话框不可见。
-        if parent.winfo_viewable():
-            self.transient(parent)
-        self.grab_set()
-
-        frm = ttk.Frame(self, padding=16)
-        frm.pack(fill=tk.BOTH, expand=True)
-
-        self.old_var = tk.StringVar()
-        self.pw_var = tk.StringVar()
-        self.pw2_var = tk.StringVar()
-
-        row = 0
-        if mode == "login":
-            ttk.Label(frm, text="请输入密码：").grid(row=row, column=0, sticky=tk.W, pady=4)
-            e = ttk.Entry(frm, textvariable=self.pw_var, show="*", width=24)
-            e.grid(row=row, column=1, pady=4)
-            e.focus_set()
-        else:
-            if not first:
-                ttk.Label(frm, text="原密码：").grid(row=row, column=0, sticky=tk.W, pady=4)
-                e0 = ttk.Entry(frm, textvariable=self.old_var, show="*", width=24)
-                e0.grid(row=row, column=1, pady=4)
-                e0.focus_set()
-                row += 1
-            ttk.Label(frm, text="新密码：").grid(row=row, column=0, sticky=tk.W, pady=4)
-            e1 = ttk.Entry(frm, textvariable=self.pw_var, show="*", width=24)
-            e1.grid(row=row, column=1, pady=4)
-            if first:
-                e1.focus_set()
-            row += 1
-            ttk.Label(frm, text="确认新密码：").grid(row=row, column=0, sticky=tk.W, pady=4)
-            ttk.Entry(frm, textvariable=self.pw2_var, show="*", width=24).grid(
-                row=row, column=1, pady=4)
-        row += 1
-
-        btns = ttk.Frame(frm)
-        btns.grid(row=row, column=0, columnspan=2, pady=(12, 0))
-        ttk.Button(btns, text="确定", command=self._on_ok).pack(side=tk.LEFT, padx=6)
-        ttk.Button(btns, text="取消", command=self._on_cancel).pack(side=tk.LEFT, padx=6)
-
-        self.bind("<Return>", lambda e: self._on_ok())
-        self.bind("<Escape>", lambda e: self._on_cancel())
-
-        # 居中：父窗口可见则居中于父窗口，否则居中于屏幕
-        self.update_idletasks()
-        w, h = self.winfo_width(), self.winfo_height()
-        if parent.winfo_viewable() and parent.winfo_width() > 1:
-            px = parent.winfo_rootx() + (parent.winfo_width() - w) // 2
-            py = parent.winfo_rooty() + (parent.winfo_height() - h) // 2
-        else:
-            px = (self.winfo_screenwidth() - w) // 2
-            py = (self.winfo_screenheight() - h) // 2
-        self.geometry(f"+{max(px, 0)}+{max(py, 0)}")
-
-        # 强制置顶显示并抢占焦点，避免登录窗被隐藏/被其他窗口遮挡
-        self.deiconify()
-        self.lift()
-        self.attributes("-topmost", True)
-        self.after(300, lambda: self.attributes("-topmost", False))
-        self.focus_force()
-
-    def _on_ok(self):
-        if self.mode == "login":
-            if self.auth.verify(self.pw_var.get()):
-                self.result = True
-                self.destroy()
-            else:
-                messagebox.showerror("登录失败", "密码错误", parent=self)
-                self.pw_var.set("")
-            return
-        # 设置 / 修改
-        if not self.first and not self.auth.verify(self.old_var.get()):
-            messagebox.showerror("错误", "原密码不正确", parent=self)
-            return
-        pw = self.pw_var.get()
-        if len(pw) < 4:
-            messagebox.showwarning("提示", "密码至少 4 位", parent=self)
-            return
-        if pw != self.pw2_var.get():
-            messagebox.showwarning("提示", "两次输入的密码不一致", parent=self)
-            return
-        self.auth.set_password(pw)
-        self.result = True
-        messagebox.showinfo("成功", "密码已设置", parent=self)
-        self.destroy()
-
-    def _on_cancel(self):
-        self.result = False
-        self.destroy()
-
-
-def run_dialog(parent, auth, mode="login", first=False):
-    dlg = PasswordDialog(parent, auth, mode=mode, first=first)
-    parent.wait_window(dlg)
-    return dlg.result
 
 
 # ============================================================
@@ -567,9 +455,9 @@ class SettingsManager:
         return bool(self._data.get("auto_start", False))
 
     @property
-    def require_password(self):
-        # 默认开启密码校验；关闭后登录不再需要密码
-        return bool(self._data.get("require_password", True))
+    def terminal(self):
+        v = self._data.get("terminal", DEFAULT_TERMINAL)
+        return v if v in dict(TERMINAL_CHOICES) else DEFAULT_TERMINAL
 
     # ---- session 置顶 ----
     def pins(self):
@@ -629,7 +517,7 @@ def set_auto_start(enable):
 
 
 class SettingsDialog(tk.Toplevel):
-    """设置对话框：开机启动 / 每页数量 / 默认宽高。"""
+    """设置对话框：开机启动 / 每页数量 / 默认宽高 / 终端类型。"""
 
     def __init__(self, parent, settings):
         super().__init__(parent)
@@ -645,26 +533,26 @@ class SettingsDialog(tk.Toplevel):
         frm.pack(fill=tk.BOTH, expand=True)
 
         self.auto_var = tk.BooleanVar(value=settings.auto_start)
-        self.pwd_var = tk.BooleanVar(value=settings.require_password)
         self.page_var = tk.StringVar(value=str(settings.page_size))
         self.w_var = tk.StringVar(value=str(settings.width))
         self.h_var = tk.StringVar(value=str(settings.height))
+        self.term_var = tk.StringVar(value=dict(TERMINAL_CHOICES)[settings.terminal])
 
         ttk.Checkbutton(frm, text="开机自动启动", variable=self.auto_var).grid(
             row=0, column=0, columnspan=2, sticky=tk.W, pady=6)
 
-        ttk.Checkbutton(frm, text="登录时需要密码校验（取消勾选后启动免密码）",
-                        variable=self.pwd_var).grid(
-            row=1, column=0, columnspan=2, sticky=tk.W, pady=6)
+        ttk.Label(frm, text="每页显示数量：").grid(row=1, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(frm, textvariable=self.page_var, width=12).grid(row=1, column=1, sticky=tk.W)
 
-        ttk.Label(frm, text="每页显示数量：").grid(row=2, column=0, sticky=tk.W, pady=6)
-        ttk.Entry(frm, textvariable=self.page_var, width=12).grid(row=2, column=1, sticky=tk.W)
+        ttk.Label(frm, text="默认宽度：").grid(row=2, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(frm, textvariable=self.w_var, width=12).grid(row=2, column=1, sticky=tk.W)
 
-        ttk.Label(frm, text="默认宽度：").grid(row=3, column=0, sticky=tk.W, pady=6)
-        ttk.Entry(frm, textvariable=self.w_var, width=12).grid(row=3, column=1, sticky=tk.W)
+        ttk.Label(frm, text="默认高度：").grid(row=3, column=0, sticky=tk.W, pady=6)
+        ttk.Entry(frm, textvariable=self.h_var, width=12).grid(row=3, column=1, sticky=tk.W)
 
-        ttk.Label(frm, text="默认高度：").grid(row=4, column=0, sticky=tk.W, pady=6)
-        ttk.Entry(frm, textvariable=self.h_var, width=12).grid(row=4, column=1, sticky=tk.W)
+        ttk.Label(frm, text="打开终端方式：").grid(row=4, column=0, sticky=tk.W, pady=6)
+        ttk.Combobox(frm, textvariable=self.term_var, state="readonly", width=18,
+                     values=[n for _, n in TERMINAL_CHOICES]).grid(row=4, column=1, sticky=tk.W)
 
         btns = ttk.Frame(frm)
         btns.grid(row=5, column=0, columnspan=2, pady=(12, 0))
@@ -691,7 +579,8 @@ class SettingsDialog(tk.Toplevel):
         self.settings.set("width", w)
         self.settings.set("height", h)
         self.settings.set("auto_start", bool(self.auto_var.get()))
-        self.settings.set("require_password", bool(self.pwd_var.get()))
+        name2val = {n: v for v, n in TERMINAL_CHOICES}
+        self.settings.set("terminal", name2val.get(self.term_var.get(), DEFAULT_TERMINAL))
         self.settings.save()
         ok, err = set_auto_start(self.auto_var.get())
         if not ok:
@@ -712,9 +601,8 @@ class SessionManagerApp:
         ("updated", "最后更新", 150),
     ]
 
-    def __init__(self, root, auth=None, settings=None):
+    def __init__(self, root, settings=None):
         self.root = root
-        self.auth = auth
         self.settings = settings or SettingsManager()
         self.root.title(f"Claude Code Session 管理器  v{APP_VERSION}")
         self.root.geometry(f"{self.settings.width}x{self.settings.height}")
@@ -772,12 +660,12 @@ class SessionManagerApp:
         ttk.Button(toolbar, text="📅 生成日报", command=lambda: self.on_gen_report("daily")).pack(side=tk.LEFT, padx=4)
         ttk.Button(toolbar, text="🗓 生成周报", command=lambda: self.on_gen_report("weekly")).pack(side=tk.LEFT, padx=4)
         ttk.Button(toolbar, text="⚙ 设置", command=self.on_settings).pack(side=tk.LEFT, padx=4)
-        ttk.Button(toolbar, text="🔑 修改密码", command=self.on_change_password).pack(side=tk.LEFT, padx=4)
         ttk.Label(toolbar, text="  项目:").pack(side=tk.LEFT)
         self.project_var = tk.StringVar(value="全部项目")
         self._all_projects = []          # 全量项目名（供输入时模糊过滤下拉候选）
         self.project_combo = ttk.Combobox(toolbar, textvariable=self.project_var,
-                                           width=22)   # 可输入：支持模糊查询
+                                           width=22,   # 可输入：支持模糊查询
+                                           postcommand=lambda: fit_combo_popdown(self.project_combo))
         self.project_combo.pack(side=tk.LEFT, padx=4)
         self.project_combo.bind("<<ComboboxSelected>>", lambda e: self.apply_filter())
         self.project_combo.bind("<KeyRelease>", self.on_project_type)  # 边输入边模糊过滤
@@ -789,7 +677,8 @@ class SessionManagerApp:
         ttk.Label(toolbar, text="  执行目录:").pack(side=tk.LEFT)
         self.dir_var = tk.StringVar(value="全部执行目录")
         self.dir_combo = ttk.Combobox(toolbar, textvariable=self.dir_var,
-                                       state="readonly", width=30)  # 拉下框选择
+                                       state="readonly", width=30,  # 拉下框选择
+                                       postcommand=lambda: fit_combo_popdown(self.dir_combo))
         self.dir_combo.pack(side=tk.LEFT, padx=4)
         self.dir_combo.bind("<<ComboboxSelected>>", lambda e: self.apply_filter())
         ttk.Label(toolbar, text=f"v{APP_VERSION}", foreground="#888").pack(side=tk.RIGHT, padx=(8, 4))
@@ -1046,7 +935,7 @@ class SessionManagerApp:
     def on_resume(self):
         if not self.selected:
             return
-        ok, info = resume_session(self.selected)
+        ok, info = resume_session(self.selected, self.settings.terminal)
         if ok:
             messagebox.showinfo("已启动",
                                 f"已在新终端中恢复会话:\n\n目录: {info}\n"
@@ -1093,13 +982,6 @@ class SessionManagerApp:
         self.selected = None
         self._set_detail("← 会话已删除，请在左侧选择其它 session")
         self.apply_filter()
-
-    # ---------- 修改密码 ----------
-    def on_change_password(self):
-        if not self.auth:
-            messagebox.showinfo("提示", "未启用登录，无需修改密码")
-            return
-        run_dialog(self.root, self.auth, mode="set", first=False)
 
     # ---------- 双击：继续执行 ----------
     def on_double_click(self, event):
@@ -1161,7 +1043,7 @@ class SessionManagerApp:
     # ---------- 生成日报 / 周报 ----------
     def on_gen_report(self, kind):
         name = "日报" if kind == "daily" else "周报"
-        ok, info = generate_report(kind)
+        ok, info = generate_report(kind, self.settings.terminal)
         if ok:
             messagebox.showinfo(
                 "已启动",
@@ -1212,28 +1094,69 @@ class RenameDialog(tk.Toplevel):
         self.destroy()
 
 
-def main():
-    root = tk.Tk()
-    set_app_icon(root)   # 设置应用图标（窗口/任务栏）
-    root.withdraw()   # 登录前先隐藏主窗口
-
-    settings = SettingsManager()
-    auth = AuthManager()
-    if settings.require_password:
-        if not auth.exists():
-            # 首次使用：自动初始化默认密码，无需用户手动设置
-            auth.set_password(DEFAULT_PASSWORD)
-            messagebox.showinfo(
-                "首次使用",
-                f"已初始化默认登录密码：{DEFAULT_PASSWORD}\n\n"
-                f"请使用该密码登录，建议登录后在「修改密码」中更改。")
-        # 登录校验
-        if not run_dialog(root, auth, mode="login"):
-            root.destroy()
+def _schedule_version_check(root):
+    """启动后异步从 GitHub Releases 查最新版本，过低则在 UI 线程弹窗提醒（优化项 #3）。"""
+    def worker():
+        try:
+            from agent import version_check
+            need, latest, url = version_check.check(APP_VERSION)
+        except Exception:
+            return
+        if not need:
             return
 
+        def prompt():
+            if messagebox.askyesno(
+                    "发现新版本",
+                    f"检测到新版本 {latest}（当前 {APP_VERSION}）。\n是否前往下载页面更新？"):
+                import webbrowser
+                webbrowser.open(url or "https://github.com/wenjuncao/cc-session/releases/latest")
+        try:
+            root.after(0, prompt)
+        except Exception:
+            pass
+
+    threading.Thread(target=worker, name="version-check", daemon=True).start()
+
+
+def main():
+    # ---- CLI 分流：被控端服务 / 无界面模式，命中即返回，不进入 GUI ----
+    args = set(sys.argv[1:])
+    if "--install-service" in args:
+        from agent import lockservice
+        lockservice.install()
+        return
+    if "--uninstall-service" in args:
+        from agent import lockservice
+        lockservice.uninstall()
+        return
+    if "--service" in args:
+        from agent import lockservice, memtrim
+        memtrim.start()          # 服务进程也回收自身内存（它只轮询会话、常驻后台）
+        lockservice.run_service()
+        return
+    if "--agent-silent" in args:
+        from agent import start as agent_start
+        agent_start.run_silent()
+        return
+
+    # ---- 正常 GUI 启动：进程内后台起被控端（单实例守卫，异常不拖垮界面） ----
+    try:
+        from agent import start as agent_start
+        agent_start.start_background()
+    except Exception:
+        pass
+
+    root = tk.Tk()
+    set_app_icon(root)   # 设置应用图标（窗口/任务栏）
+    root.withdraw()   # 初始化时先隐藏主窗口，就绪后再显示
+
+    settings = SettingsManager()
+    # 已按需求移除启动登录校验：软件直接进入主界面，无需密码。
+
     root.deiconify()
-    SessionManagerApp(root, auth, settings)
+    _schedule_version_check(root)   # 异步检查更新
+    SessionManagerApp(root, settings)
     root.mainloop()
 
 
