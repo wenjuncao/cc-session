@@ -14,12 +14,7 @@ __pycache__/
 /config/config.json
 /config.json
 
-# 被控端本地状态（密码哈希、自签证书、node.json、日志、users.json，均不入库）
-/config/agent/
-
-# 打包目录 deploy/：保留源文件(spec/iss/bat/branding/lang/_read_version.py)，忽略构建输出
-/deploy/cc-session/
-/deploy/release/
-/deploy/_build.log
+# 打包目录 deploy/ 只放源文件(spec/iss/lang)；安装包输出到根目录 release/
+/release/
 # 上面 *.spec 会误伤 deploy 下手写的 spec，单独放行
 !/deploy/cc-session.spec

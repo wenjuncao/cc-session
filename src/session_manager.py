@@ -23,7 +23,8 @@ from datetime import datetime, timezone
 import tkinter as tk
 from tkinter import ttk, messagebox, font as tkfont
 
-APP_VERSION = "0.0.14"   # 当前程序版本号（打包时自动 +1，如 0.0.1 -> 0.0.2）
+APP_VERSION = "1.0.0"   # 当前程序版本号（打包时自动 +1，如 0.0.1 -> 0.0.2）
+APP_AUTHOR = "文生@caowenjun.com"   # 程序作者（显示在窗口标题与工具栏）
 
 PROJECTS_DIR = os.path.join(os.path.expanduser("~"), ".claude", "projects")
 HEAD_LINES = 300        # 扫描时读取的头部行数（用于取标题/cwd/创建时间，保证启动快）
@@ -604,7 +605,7 @@ class SessionManagerApp:
     def __init__(self, root, settings=None):
         self.root = root
         self.settings = settings or SettingsManager()
-        self.root.title(f"Claude Code Session 管理器  v{APP_VERSION}")
+        self.root.title(f"Claude Code Session 管理器  v{APP_VERSION}    作者：{APP_AUTHOR}")
         self.root.geometry(f"{self.settings.width}x{self.settings.height}")
 
         self.page_size = self.settings.page_size
@@ -681,6 +682,8 @@ class SessionManagerApp:
                                        postcommand=lambda: fit_combo_popdown(self.dir_combo))
         self.dir_combo.pack(side=tk.LEFT, padx=4)
         self.dir_combo.bind("<<ComboboxSelected>>", lambda e: self.apply_filter())
+        ttk.Label(toolbar, text=f"作者：{APP_AUTHOR}", foreground="#1565C0",
+                  font=("Microsoft YaHei UI", 10, "bold")).pack(side=tk.RIGHT, padx=(8, 4))
         ttk.Label(toolbar, text=f"v{APP_VERSION}", foreground="#888").pack(side=tk.RIGHT, padx=(8, 4))
         self.count_label = ttk.Label(toolbar, text="")
         self.count_label.pack(side=tk.RIGHT)
@@ -1098,7 +1101,7 @@ def _schedule_version_check(root):
     """启动后异步从 GitHub Releases 查最新版本，过低则在 UI 线程弹窗提醒（优化项 #3）。"""
     def worker():
         try:
-            from agent import version_check
+            import version_check
             need, latest, url = version_check.check(APP_VERSION)
         except Exception:
             return
@@ -1120,33 +1123,6 @@ def _schedule_version_check(root):
 
 
 def main():
-    # ---- CLI 分流：被控端服务 / 无界面模式，命中即返回，不进入 GUI ----
-    args = set(sys.argv[1:])
-    if "--install-service" in args:
-        from agent import lockservice
-        lockservice.install()
-        return
-    if "--uninstall-service" in args:
-        from agent import lockservice
-        lockservice.uninstall()
-        return
-    if "--service" in args:
-        from agent import lockservice, memtrim
-        memtrim.start()          # 服务进程也回收自身内存（它只轮询会话、常驻后台）
-        lockservice.run_service()
-        return
-    if "--agent-silent" in args:
-        from agent import start as agent_start
-        agent_start.run_silent()
-        return
-
-    # ---- 正常 GUI 启动：进程内后台起被控端（单实例守卫，异常不拖垮界面） ----
-    try:
-        from agent import start as agent_start
-        agent_start.start_background()
-    except Exception:
-        pass
-
     root = tk.Tk()
     set_app_icon(root)   # 设置应用图标（窗口/任务栏）
     root.withdraw()   # 初始化时先隐藏主窗口，就绪后再显示

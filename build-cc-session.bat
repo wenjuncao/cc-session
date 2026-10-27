@@ -4,10 +4,11 @@ rem  Build cc-session (kpc-style): PyInstaller onedir + Inno Setup installer
 rem  Run this file (double-click or from cmd). ASCII name on purpose:
 rem  a CJK-named .bat piped from Git Bash opens cmd interactively and never runs.
 rem
-rem  Layout:  <repo>\deploy\  this bat, cc-session.spec, cc-session.iss
+rem  Layout:  <repo>\         this bat
+rem           <repo>\deploy\  cc-session.spec, cc-session.iss, lang
 rem           <repo>\src\     session_manager.py (entry)
-rem  Output:  <repo>\deploy\cc-session\cc-session.exe        (onedir)
-rem           <repo>\deploy\release\cc-session-setup-<ver>.exe (installer)
+rem  Output:  <repo>\build\dist\cc-session\cc-session.exe  (onedir, intermediate)
+rem           <repo>\release\cc-session-setup-<ver>.exe    (installer)
 rem  Version: single source = src\session_manager.py APP_VERSION.
 rem           Auto-bump: last segment +1 on every run (scripts\bump_version.py),
 rem           written back before build so exe version + installer name use the NEW number.
@@ -15,7 +16,7 @@ rem ============================================================
 setlocal
 cd /d "%~dp0"
 
-for %%I in ("%~dp0..") do set "REPO=%%~fI"
+for %%I in ("%~dp0.") do set "REPO=%%~fI"
 set "ROOT=%REPO%\src"
 set "ENTRY=%ROOT%\session_manager.py"
 
@@ -34,8 +35,7 @@ if not defined PY (
 )
 
 rem --- bump version: last segment +1, write back to src (single source), capture new ---
-rem     Bumps on every run (including a run that later fails). bump_version.py also
-rem     syncs src\agent\version.py AGENT_VERSION so broadcast/service ver stays in step.
+rem     Bumps on every run (including a run that later fails).
 set "APPVER="
 for /f "usebackq delims=" %%v in (`%PY% "%REPO%\scripts\bump_version.py"`) do set "APPVER=%%v"
 if not defined APPVER (
@@ -45,20 +45,19 @@ if not defined APPVER (
 echo === cc-session build  version %APPVER% (bumped) ===
 
 rem --- deps ---
-echo [1/4] Ensuring PyInstaller + requirements...
+echo [1/4] Ensuring PyInstaller...
 %PY% -m pip show pyinstaller >nul 2>nul || %PY% -m pip install pyinstaller
 if errorlevel 1 goto fail
-if exist "%REPO%\requirements.txt" %PY% -m pip install -r "%REPO%\requirements.txt"
 
 rem --- PyInstaller onedir via spec ---
 echo [2/4] PyInstaller onedir (this may take 1-2 minutes)...
-%PY% -m PyInstaller "%REPO%\deploy\cc-session.spec" --clean --noconfirm --distpath "%REPO%\deploy" --workpath "%REPO%\build"
+%PY% -m PyInstaller "%REPO%\deploy\cc-session.spec" --clean --noconfirm --distpath "%REPO%\build\dist" --workpath "%REPO%\build"
 if errorlevel 1 goto fail
-if not exist "%REPO%\deploy\cc-session\cc-session.exe" (
-  echo [ERROR] onedir exe missing: %REPO%\deploy\cc-session\cc-session.exe
+if not exist "%REPO%\build\dist\cc-session\cc-session.exe" (
+  echo [ERROR] onedir exe missing: %REPO%\build\dist\cc-session\cc-session.exe
   goto fail
 )
-echo     onedir OK: %REPO%\deploy\cc-session\cc-session.exe
+echo     onedir OK: %REPO%\build\dist\cc-session\cc-session.exe
 
 rem --- locate ISCC (Inno Setup 6) ---
 echo [3/4] Locating Inno Setup (ISCC)...
@@ -78,12 +77,12 @@ echo [4/4] Building installer with %ISCC% ...
 "%ISCC%" /DAppVer=%APPVER% "%REPO%\deploy\cc-session.iss"
 if errorlevel 1 goto fail
 echo.
-echo [DONE] Installer: %REPO%\deploy\release\cc-session-setup-%APPVER%.exe
+echo [DONE] Installer: %REPO%\release\cc-session-setup-%APPVER%.exe
 goto end
 
 :doneonedir
 echo.
-echo [DONE] onedir only: %REPO%\deploy\cc-session\  (installer step skipped)
+echo [DONE] onedir only: %REPO%\build\dist\cc-session\  (installer step skipped)
 goto end
 
 :fail

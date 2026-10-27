@@ -36,7 +36,7 @@ echo New version: %APPVER%
 echo [2/2] Building EXE %EXENAME%.exe (this may take 1-2 minutes)...
 rem --distpath ..  : output exe to project root instead of dist\
 rem --workpath / --specpath : keep intermediate files under ..\build\
-%PYEXE% -m PyInstaller --noconfirm --onefile --windowed --name %EXENAME% --icon "%ICO%" --add-data "%ICO%;." --paths "%ROOT%\src" --collect-submodules agent --hidden-import flask_sock --hidden-import simple_websocket --hidden-import werkzeug.serving --hidden-import PIL.ImageGrab --hidden-import cryptography --collect-all pywinpty --hidden-import winpty --distpath "%ROOT%" --workpath "%ROOT%\build" --specpath "%ROOT%\build" "%SRC%"
+%PYEXE% -m PyInstaller --noconfirm --onefile --windowed --name %EXENAME% --icon "%ICO%" --add-data "%ICO%;." --distpath "%ROOT%" --workpath "%ROOT%\build" --specpath "%ROOT%\build" "%SRC%"
 if errorlevel 1 goto buildfail
 
 echo.

@@ -1,42 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller onedir 规格：cc-session（Claude Code 会话管理器）。
 
-构建：见 deploy/build-cc-session.bat。产物：deploy/cc-session/cc-session.exe + 依赖文件夹，
+构建：见根目录 build-cc-session.bat。产物：build/dist/cc-session/cc-session.exe + 依赖文件夹，
 再由 deploy/cc-session.iss 打成 Windows 安装包。
 
 要点（仿 kpc 打包方式）：
-  - 入口 src/session_manager.py（GUI 主程序；同一 exe 另经 CLI 参数充当被控端服务）。
-  - windowed（console=False）：GUI 程序不弹控制台；--service/--agent-silent 静默常驻也无窗口。
-  - 被控端子包 agent 由 collect_submodules 全量收集；其运行期依赖（flask_sock/simple_websocket/
-    werkzeug.serving/PIL.ImageGrab/cryptography）静态分析看不全，显式 hiddenimports。
+  - 入口 src/session_manager.py（GUI 主程序，零第三方依赖）。
+  - windowed（console=False）：GUI 程序不弹控制台。
   - logo.ico 落 _MEIPASS 根：session_manager.resource_path 冻结态按 sys._MEIPASS/logo.ico 找。
   - Windows 版本资源：任务管理器/文件属性/UAC 弹窗显示中文名而非 cc-session.exe。
 """
 import os
 import re
-import sys
 import tempfile
-
-from PyInstaller.utils.hooks import collect_submodules
 
 # 路径锚到 spec 所在目录（PyInstaller 注入 SPECPATH），与 cwd 解耦。
 HERE = os.path.abspath(SPECPATH)          # <仓库根>/deploy
 REPO = os.path.dirname(HERE)              # <仓库根>
-ROOT = os.path.join(REPO, "src")          # import agent.* / session_manager 的父目录
+ROOT = os.path.join(REPO, "src")          # session_manager / version_check 所在目录
 ICON = os.path.join(REPO, "assets", "logo.ico")
-
-# 让 collect_submodules('agent') 能找到包（spec 在 PyInstaller 进程里执行，pathex 尚未生效）。
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
 
 datas = [
     (ICON, "."),   # -> _MEIPASS/logo.ico，与 resource_path 对齐
 ]
 binaries = []
-hiddenimports = [
-    "flask_sock", "simple_websocket", "werkzeug.serving",
-    "PIL.ImageGrab", "cryptography",
-] + collect_submodules("agent")
+hiddenimports = []
 
 # ── Windows 版本资源：显示中文程序名 ─────────────────────────────────────
 # 版本号从 session_manager.py 正则读出（唯一事实源），不在此另写一份。

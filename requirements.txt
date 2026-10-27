@@ -1,9 +1,0 @@
-﻿# cc-session 被控端能力所需第三方依赖（cc-session 主界面本身零依赖）
-flask
-flask-sock
-simple-websocket
-werkzeug
-cryptography
-pillow
-pywinpty      # 交互式终端(term.*)所需的 ConPTY 绑定；缺失时 term.* 回 PtyUnavailable，其余能力不受影响
-argon2-cffi   # 可选：更强口令哈希，缺失时自动回退 werkzeug
