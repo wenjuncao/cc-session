@@ -14,7 +14,7 @@ __pycache__/
 /config/config.json
 /config.json
 
-# 打包目录 deploy/ 只放源文件(spec/iss/lang)；安装包输出到根目录 release/
+# 安装包输出到根目录 release/
 /release/
-# 上面 *.spec 会误伤 deploy 下手写的 spec，单独放行
-!/deploy/cc-session.spec
+# 上面 *.spec 会误伤 scripts 下手写的 spec，单独放行
+!/scripts/cc-session.spec

@@ -5,7 +5,7 @@ rem  Run this file (double-click or from cmd). ASCII name on purpose:
 rem  a CJK-named .bat piped from Git Bash opens cmd interactively and never runs.
 rem
 rem  Layout:  <repo>\         this bat
-rem           <repo>\deploy\  cc-session.spec, cc-session.iss, lang
+rem           <repo>\scripts\ cc-session.spec, cc-session.iss, lang
 rem           <repo>\src\     session_manager.py (entry)
 rem  Output:  <repo>\build\dist\cc-session\cc-session.exe  (onedir, intermediate)
 rem           <repo>\release\cc-session-setup-<ver>.exe    (installer)
@@ -51,7 +51,7 @@ if errorlevel 1 goto fail
 
 rem --- PyInstaller onedir via spec ---
 echo [2/4] PyInstaller onedir (this may take 1-2 minutes)...
-%PY% -m PyInstaller "%REPO%\deploy\cc-session.spec" --clean --noconfirm --distpath "%REPO%\build\dist" --workpath "%REPO%\build"
+%PY% -m PyInstaller "%REPO%\scripts\cc-session.spec" --clean --noconfirm --distpath "%REPO%\build\dist" --workpath "%REPO%\build"
 if errorlevel 1 goto fail
 if not exist "%REPO%\build\dist\cc-session\cc-session.exe" (
   echo [ERROR] onedir exe missing: %REPO%\build\dist\cc-session\cc-session.exe
@@ -74,7 +74,7 @@ if not defined ISCC (
 
 rem --- compile installer ---
 echo [4/4] Building installer with %ISCC% ...
-"%ISCC%" /DAppVer=%APPVER% "%REPO%\deploy\cc-session.iss"
+"%ISCC%" /DAppVer=%APPVER% "%REPO%\scripts\cc-session.iss"
 if errorlevel 1 goto fail
 echo.
 echo [DONE] Installer: %REPO%\release\cc-session-setup-%APPVER%.exe

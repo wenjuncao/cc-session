@@ -2,7 +2,7 @@
 """PyInstaller onedir 规格：cc-session（Claude Code 会话管理器）。
 
 构建：见根目录 build-cc-session.bat。产物：build/dist/cc-session/cc-session.exe + 依赖文件夹，
-再由 deploy/cc-session.iss 打成 Windows 安装包。
+再由 scripts/cc-session.iss 打成 Windows 安装包。
 
 要点（仿 kpc 打包方式）：
   - 入口 src/session_manager.py（GUI 主程序，零第三方依赖）。
@@ -15,7 +15,7 @@ import re
 import tempfile
 
 # 路径锚到 spec 所在目录（PyInstaller 注入 SPECPATH），与 cwd 解耦。
-HERE = os.path.abspath(SPECPATH)          # <仓库根>/deploy
+HERE = os.path.abspath(SPECPATH)          # <仓库根>/scripts
 REPO = os.path.dirname(HERE)              # <仓库根>
 ROOT = os.path.join(REPO, "src")          # session_manager / version_check 所在目录
 ICON = os.path.join(REPO, "assets", "logo.ico")
